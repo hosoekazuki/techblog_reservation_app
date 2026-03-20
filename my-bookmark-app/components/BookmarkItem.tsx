@@ -6,6 +6,7 @@
 // タイトル、説明、保存日、削除ボタンなどを表示します
 // page.tsx から bookmarks の配列内の各アイテムに対して、このコンポーネントが何度も使われます
 
+import Link from 'next/link';  // Next.js の Link コンポーネント（ページ遷移用）
 // 【Props とは】
 // 親からこのコンポーネントへ渡される情報
 interface BookmarkItemProps {
@@ -23,16 +24,10 @@ export default function BookmarkItem({ item, onDelete }: BookmarkItemProps) {
     <div className="bg-white p-5 rounded-lg shadow hover:shadow-md transition border-l-4 border-blue-500 flex justify-between items-start">
       {/* 左側: テキスト情報（タイトル、説明、日付） */}
       <div className="flex-1 pr-4">
-        {/* 記事タイトル: 링크としてURL 先に開く */}
-        <a 
-          href={item.url}  // href にURL を指定
-          target="_blank"  // 新しいタブで開く
-          rel="noopener noreferrer"  // セキュリティ設定
-          className="text-lg font-bold text-blue-600 hover:underline block leading-snug"
-        >
-          {/* item.title に保存されている記事のタイトルを表示 */}
-          {item.title}
-        </a>
+        {/* 記事タイトル: リンクとしてURL 先に開く */}
+        <Link href={`/items/${item.id}`} className="text-blue-600 hover:underline font-bold">
+            {item.title}
+        </Link>
         
         {/* 記事の説明文: 最大2行までで表示（line-clamp-2） */}
         <p className="text-gray-500 text-sm mt-2 line-clamp-2">{item.description}</p>
