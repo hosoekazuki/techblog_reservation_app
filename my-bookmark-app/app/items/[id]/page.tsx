@@ -17,6 +17,7 @@ import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import TagEditor from '@/components/TagEditor'
 
 export default function DetailPage() {
   // ===== URL パラメータ取得 =====
@@ -42,6 +43,16 @@ export default function DetailPage() {
   // 【新規追加】評価保存中かどうかのフラグ
   const [savingRating, setSavingRating] = useState(false)
 
+  // 【新規追加】タグ管理
+  // 現在のブックマークのタグを保持
+  const [tag, setTag] = useState('その他')
+  
+  // タグ保存中かどうかのフラグ
+  const [savingTag, setSavingTag] = useState(false)
+  
+  // 過去に使用したタグ一覧（ドロップダウン候補用）
+  const [allTags, setAllTags] = useState<string[]>([])
+
   // ===== データ取得処理 =====
   // useEffect: ページが初めて表示された時にブックマーク情報を取得
   // 依存配列 [id] により、id が変わった時も再実行される
@@ -58,6 +69,21 @@ export default function DetailPage() {
         setItem(data)  // 取得したデータを状態に保存（画面に表示される）
         setMemo(data.memo || '') // DBに保存されているメモがあればセットする
         setRating(data.rating || 0) // DBに保存されている評価があればセットする
+        setTag(data.tag || 'その他') // 【新規追加】DBに保存されているタグがあればセットする
+      }
+
+      // 【新規追加】すべてのブックマークを取得して、ユニークなタグを抽出
+      // ドロップダウンで過去に使用したタグを候補として表示するため
+      const { data: allBookmarks } = await supabase
+        .from('techblog_bookmark')
+        .select('tag')
+
+      if (allBookmarks) {
+        // null や空文字列を除外し、重複を削除してソート
+        const uniqueTags = Array.from(
+          new Set(allBookmarks.map(b => b.tag).filter(Boolean))
+        ).sort()
+        setAllTags(uniqueTags)
       }
     }
     fetchItem()
@@ -107,6 +133,30 @@ export default function DetailPage() {
     setSavingRating(false)
   }
 
+  // 【新規追加】タグ保存処理
+  // タグが変更された時にローカル状態を更新
+  const handleTagInput = (newTag: string) => {
+    setTag(newTag)  // UI に即座に反映
+  }
+
+  // タグ入力フィールドからフォーカスが失われた時に、Supabase に保存
+  const handleTagBlur = async () => {
+    const tagValue = tag || 'その他'  // 空の場合はデフォルト値
+    setSavingTag(true)
+
+    // Supabase にタグを保存
+    const { error } = await supabase
+      .from('techblog_bookmark')
+      .update({ tag: tagValue })  // tagカラムを更新
+      .eq('id', id)
+
+    if (error) {
+      alert('タグの保存に失敗しました')
+    }
+
+    setSavingTag(false)
+  }
+
   // ===== ローディング状態の処理 =====
   // item が null（まだデータが取得されていない）の場合、読み込み中メッセージを表示
   if (!item) return <p className="p-10">読み込み中...</p>
@@ -152,6 +202,15 @@ export default function DetailPage() {
               ))}
             </div>
           </div>
+
+          {/* 【新規追加】タグ編集セクション */}
+          <TagEditor
+            currentTag={tag}
+            onTagInput={handleTagInput}
+            onTagBlur={handleTagBlur}
+            availableTags={allTags}
+            saving={savingTag}
+          />
         </article>
 
         {/* ===== メモ機能セクション ===== */}

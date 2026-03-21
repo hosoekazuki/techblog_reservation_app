@@ -1,59 +1,181 @@
 // ============================================
 // app/api/extract/route.ts
 // ============================================
-// 【ファイルの役割】
-// フロントエンド（page.tsx）から呼ばれるバックエンドAPI
-// ユーザーが入力したURLから、ブログのタイトルと説明文を自動的に抽出します
-// このAPIがないと、ユーザーが手動でタイトルや説明を入力する必要があります
 
-// 【ライブラリのインポート】
-import { NextResponse } from 'next/server';  // Next.js の API レスポンス用ツール
-import * as cheerio from 'cheerio';  // HTML を解析するライブラリ（jQuery のようなシンタックス）
+import { NextResponse } from 'next/server';
+import * as cheerio from 'cheerio';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// 【関数の説明】
-// POST メソッド: フロントエンドから POST リクエストを受け取る処理
-// export = 他のファイルから使える公開関数として定義
-// async = 非同期処理（時間がかかるなら await する）
+// 要約方針を変更したい場合は、このテンプレートを編集してください。
+const SUMMARY_PROMPT_TEMPLATE = `あなたは技術記事の要約エキスパートです。
+
+以下の情報から、記事の全体像が伝わる要約を日本語で作成してください。
+
+【必須条件】
+1. 記事の主題を最初に示す
+2. この記事で学べることを含める
+3. 読後に「何ができるようになるか」を含める
+4. 主要技術名（例: Next.js, Supabase, React など）を可能な範囲で含める
+5. 実装の細かい手順の羅列ではなく、全体像と価値を要約する
+6. 120〜170字程度で簡潔に書く
+7. 出力は1段落のみ。見出し・箇条書き・前置きは禁止
+
+【記事情報】
+{{ARTICLE_SOURCE}}
+
+【出力】`;
+
 export async function POST(request: Request) {
-  try {  // エラーが起きた時のために try-catch で囲む
-    // ===== ステップ1: リクエストボディから URL を取得 =====
-    const { url } = await request.json();  // JSON形式のデータから url を取り出す
-    
-    // ===== ステップ2: 指定されたURLにアクセスして HTML コンテンツを取得 =====
+  try {
+    // ===== ステップ1: URLを取得 =====
+    const { url } = await request.json();
+
+    // ===== ステップ2: URLにアクセスしてHTMLを取得 =====
     const response = await fetch(url, {
-        // User-Agent ヘッダー: 「私はブラウザです」とサーバーに見せる
-        // (User-Agent がないと、一部のサイトからブロックされる可能性がある)
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
     });
-    // ===== ステップ3: レスポンスを HTML テキストに変換 =====
-    const html = await response.text();  // HTML全体をテキストとして取得
-    
-    // ===== ステップ4: Cheerio で HTMLを解析可能にする =====
-    // cheerio.load(html) = jQuery のようなセレクタでHTMLを検索できるようにする
+    const html = await response.text();
+
+    // ===== ステップ3: Cheerioで解析 =====
     const $ = cheerio.load(html);
 
-    // ===== ステップ5: HTML から タイトルを抽出 =====
-    // 優先順：og:title -> title タグ -> 空文字
-    // og:title = Facebook/Twitter 用のメタタグ（最も確実なタイトル）
-    const title = 
-      $('meta[property="og:title"]').attr('content')  // og:title があれば使用
-      || $('title').text()  // なければ <title> タグから
-      || '';  // それでもなければ空文字
-    
-    // ===== ステップ6: HTML から 説明文を抽出 =====
-    // 優先順：og:description -> description メタタグ -> 空文字
-    const description = 
-      $('meta[property="og:description"]').attr('content')  // og:description があれば使用
-      || $('meta[name="description"]').attr('content')  // なければ description メタタグから
-      || '';  // それでもなければ空文字
+    // ===== ステップ4: タイトルを抽出 =====
+    const title =
+      $('meta[property="og:title"]').attr('content')
+      || $('title').text()
+      || '';
 
-    // ===== ステップ7: 抽出したデータをクライアント（フロントエンド）に返す =====
-    return NextResponse.json({ title, description });
-    } catch (error) {  // エラーが発生した場合の処理
-        console.error('Error fetching URL:', error);  // エラーをコンソールに表示（サーバーログ）
-        // エラー時でも空のデータを返す（フロントエンドでの処理を続行）
-        return NextResponse.json({ title: '', description: '' });
+    // ===== ステップ5: メタ説明文を抽出（フォールバック用） =====
+    const metaDescription =
+      $('meta[property="og:description"]').attr('content')
+      || $('meta[name="description"]').attr('content')
+      || '';
+
+    // ===== 【修正】ステップ6: 要約用の入力情報を抽出 =====
+    // 本文だけでなくタイトル・見出し・導入段落をまとめて渡すことで、
+    // 記事の全体像を要約しやすくする
+    const articleSource = buildSummarySource($, title, metaDescription);
+
+    // ===== ステップ7: Gemini APIで要約 =====
+    let summarizedDescription = metaDescription; // デフォルトはメタ説明文
+
+    // サーバーサイドAPIルートでは NEXT_PUBLIC_ なしの変数名を使用
+    // .env に GOOGLE_GEMINI_API_KEY を設定してください
+    const apiKey = process.env.GOOGLE_GEMINI_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_GEMINI_API_KEY;
+
+    console.log('🔍 [要約処理開始]');
+    console.log('- APIキー設定:', apiKey ? '✓ あり' : '✗ なし');
+    console.log('- 要約入力長:', articleSource.length);
+
+    // 要約用テキストが十分に取得できた場合にGeminiで要約
+    if (apiKey && articleSource.length > 120) {
+      try {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+        // 長すぎる入力を抑制
+        const clippedSource = articleSource.slice(0, 5000);
+        const prompt = SUMMARY_PROMPT_TEMPLATE.replace('{{ARTICLE_SOURCE}}', clippedSource);
+
+        console.log('🚀 Gemini API 呼び出し中...');
+        const result = await model.generateContent(prompt);
+        const geminiResponse = await result.response;
+        const summaryText = geminiResponse.text().trim();
+
+        if (summaryText) {
+          summarizedDescription = summaryText;
+          console.log('✅ 要約完了:', summarizedDescription.substring(0, 100) + '...');
+        } else {
+          console.log('⚠️ 要約結果が空のためメタ説明文を使用');
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('❌ 要約処理でエラー:', errorMessage);
+        // エラー時はメタ説明文を使用
+        summarizedDescription = metaDescription;
+      }
+    } else {
+      console.log('⏭️ 要約処理スキップ', {
+        hasApiKey: !!apiKey,
+          sourceLength: articleSource.length,
+      });
     }
+
+    // ===== ステップ8: レスポンスを返す =====
+    return NextResponse.json({
+      title,
+      description: summarizedDescription,
+    });
+
+  } catch (error) {
+    console.error('Error fetching URL:', error);
+    return NextResponse.json({ title: '', description: '' });
+  }
+}
+
+// ============================================
+// 【新規追加】記事本文テキストを抽出するヘルパー関数
+// メタタグではなく実際の記事コンテンツを取得する
+// ============================================
+function extractArticleText($: cheerio.CheerioAPI): string {
+  // ナビゲーション・フッター・サイドバーなど不要な要素を除去
+  $('nav, footer, header, aside, script, style, [class*="nav"], [class*="sidebar"], [class*="footer"], [class*="menu"], [class*="ad"], [class*="banner"]').remove();
+
+  // 記事本文を含みやすいセレクタを優先順に試みる
+  const selectors = [
+    'article',
+    '[class*="article-body"]',
+    '[class*="article_body"]',
+    '[class*="post-body"]',
+    '[class*="post_body"]',
+    '[class*="entry-content"]',
+    '[class*="entry_content"]',
+    'main',
+    '.content',
+    '#content',
+  ];
+
+  for (const selector of selectors) {
+    const el = $(selector);
+    if (el.length > 0) {
+      const text = el.text().replace(/\s+/g, ' ').trim();
+      if (text.length > 200) {
+        return text;
+      }
+    }
+  }
+
+  // どれにも該当しない場合は body 全体のテキストを使用
+  return $('body').text().replace(/\s+/g, ' ').trim();
+}
+
+function buildSummarySource(
+  $: cheerio.CheerioAPI,
+  title: string,
+  metaDescription: string,
+): string {
+  const articleText = extractArticleText($);
+
+  const headings = $('h1, h2, h3')
+    .map((_, el) => $(el).text().replace(/\s+/g, ' ').trim())
+    .get()
+    .filter(Boolean)
+    .slice(0, 12)
+    .join(' | ');
+
+  const paragraphs = $('article p, main p, .content p, #content p, p')
+    .map((_, el) => $(el).text().replace(/\s+/g, ' ').trim())
+    .get()
+    .filter((t) => t.length > 30)
+    .slice(0, 10)
+    .join('\n');
+
+  return [
+    `タイトル: ${title || '不明'}`,
+    `メタ説明: ${metaDescription || 'なし'}`,
+    `見出し: ${headings || 'なし'}`,
+    `本文抜粋: ${(paragraphs || articleText || '').slice(0, 4000)}`,
+  ].join('\n\n');
 }

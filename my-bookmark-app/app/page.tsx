@@ -82,6 +82,21 @@ export default function Home() {
     // UI 更新: 保存中フラグ ON（ボタンを無効化）
     setLoading(true);
     try {
+      // 【新規追加】重複チェック: 同じURL が既に保存されているか確認
+      // 入力されたURL が Supabase に存在するかチェック
+      const { data: existingUrl, error: checkError } = await supabase
+        .from('techblog_bookmark')
+        .select('id')
+        .eq('url', url)
+        .limit(1);  // 1件取得すれば十分
+      
+      // 既に同じURL が保存されていたら、警告を表示して処理を中断
+      if (existingUrl && existingUrl.length > 0) {
+        alert('このURLは既に保存されています');
+        setUrl('');  // 【新規追加】入力欄をクリア
+        return;
+      }
+
       // ===== ステップ1: 自分たちの API (/api/extract) を呼ぶ =====
       // URL からタイトル・説明文を抽出してもらう
       const res = await fetch('/api/extract', {
