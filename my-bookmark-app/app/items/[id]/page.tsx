@@ -28,12 +28,19 @@ export default function DetailPage() {
   // ブックマークの詳細データを保持
   const [item, setItem] = useState<any>(null)
   
-  // 【追加】メモの内容を管理する状態
+  // メモの内容を管理する状態
   // ユーザーがテキストエリアに入力したメモ内容をリアルタイムで保持
   const [memo, setMemo] = useState('')
   
   // メモ保存中かどうかのフラグ（ボタンの無効化に使用）
   const [saving, setSaving] = useState(false)
+  
+  // 【新規追加】評価（星）を管理する状態（1～5）
+  // ユーザーが選択した星の数を保持
+  const [rating, setRating] = useState(0)
+  
+  // 【新規追加】評価保存中かどうかのフラグ
+  const [savingRating, setSavingRating] = useState(false)
 
   // ===== データ取得処理 =====
   // useEffect: ページが初めて表示された時にブックマーク情報を取得
@@ -50,13 +57,14 @@ export default function DetailPage() {
       if (data) {
         setItem(data)  // 取得したデータを状態に保存（画面に表示される）
         setMemo(data.memo || '') // DBに保存されているメモがあればセットする
+        setRating(data.rating || 0) // DBに保存されている評価があればセットする
       }
     }
     fetchItem()
   }, [id])
 
   // ===== メモ保存処理 =====
-  // 【追加】保存ボタンを押した時の関数
+  // 保存ボタンを押した時の関数
   // ユーザーが入力したメモ内容をSupabaseに保存する
   const handleSaveMemo = async () => {
     // UI 更新: 保存中フラグ ON（ボタンを無効化）
@@ -79,53 +87,111 @@ export default function DetailPage() {
     setSaving(false)
   }
 
+  // ===== 【新規追加】評価保存処理 =====
+  // 星をクリックして評価を変更し、すぐに Supabase に保存
+  const handleSaveRating = async (newRating: number) => {
+    setRating(newRating)  // まず UI を即座に更新
+    setSavingRating(true)
+    
+    // Supabase に評価を保存
+    const { error } = await supabase
+      .from('techblog_bookmark')
+      .update({ rating: newRating })  // ratingカラムを更新
+      .eq('id', id)
+
+    if (error) {
+      alert('評価の保存に失敗しました')
+      setRating(rating)  // エラー時は前の評価に戻す
+    }
+    
+    setSavingRating(false)
+  }
+
   // ===== ローディング状態の処理 =====
   // item が null（まだデータが取得されていない）の場合、読み込み中メッセージを表示
   if (!item) return <p className="p-10">読み込み中...</p>
 
   return (
-    <main className="max-w-2xl mx-auto p-6 font-sans text-gray-900">
-      {/* ===== 戻るリンク ===== */}
-      {/* Link コンポーネント: トップページに戻るナビゲーション */}
-      <Link href="/" className="text-blue-500 hover:underline mb-6 block">← 戻る</Link>
-      
-      {/* ===== ブックマーク詳細情報表示 ===== */}
-      <div className="mb-8">
-        {/* 記事のタイトル: Supabase から取得したデータを表示 */}
-        <h1 className="text-3xl font-bold mb-4">{item.title}</h1>
-        {/* 記事の説明文: Supabase から取得したデータを表示 */}
-        <p className="text-gray-600 leading-relaxed">{item.description}</p>
-      </div>
-      
-      {/* ===== メモ機能セクション ===== */}
-      {/* このセクションがこのページの重要な機能！ */}
-      <div className="bg-yellow-50 p-6 rounded-xl border border-yellow-200 shadow-sm">
-        {/* セクションタイトル */}
-        <h2 className="font-bold mb-3 flex items-center gap-2">
-          <span>📝</span> 学習メモ
-        </h2>
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-12 px-4">
+      <div className="max-w-2xl mx-auto">
         
-        {/* ===== メモ入力フィールド ===== */}
-        {/* テキストエリア: ユーザーがメモを入力する場所 */}
-        <textarea 
-          value={memo}  // 現在のメモ状態を表示
-          // ユーザーが入力するたびに setMemo で memo 状態を更新
-          onChange={(e) => setMemo(e.target.value)}
-          className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-yellow-400 outline-none text-black min-h-[150px]"
-          placeholder="この記事から学んだこと、後で読み返したいポイントをメモ..."
-        />
+        {/* ===== ヘッダー：戻るボタン ===== */}
+        <div className="mb-8">
+          <Link href="/" className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-700 font-semibold transition">
+            ← トップに戻る
+          </Link>
+        </div>
         
-        {/* ===== メモ保存ボタン ===== */}
-        <button 
-          onClick={handleSaveMemo}  // クリックで handleSaveMemo 関数を実行して保存
-          disabled={saving}  // saving が true の時、ボタンを無効化して複数回クリックを防ぐ
-          className={`mt-4 w-full py-3 rounded-lg text-white font-bold transition ${
-            saving ? 'bg-gray-400' : 'bg-yellow-600 hover:bg-yellow-700'
-          }`}
-        >
-          {/* saving 状態で表示内容を切り替え */}
-          {saving ? '保存中...' : 'メモを保存する'}
-        </button>
+        {/* ===== 記事情報カード ===== */}
+        <article className="bg-white rounded-2xl shadow-lg p-8 mb-8">
+          {/* 記事のタイトル */}
+          <h1 className="text-4xl font-bold text-gray-800 mb-4 leading-tight">
+            {item.title}
+          </h1>
+          
+          {/* 記事の説明文 */}
+          <p className="text-lg text-gray-600 leading-relaxed mb-6 border-l-4 border-indigo-400 pl-4">
+            {item.description}
+          </p>
+          
+          {/* ===== 【新規追加】評価セクション ===== */}
+          <div className="flex items-center gap-4 pt-6 border-t border-gray-200">
+            <span className="text-gray-600 font-semibold">この記事の評価:</span>
+            <div className="flex gap-1">
+              {/* 1～5つの星をクリック可能にしたボタンで表示 */}
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() => handleSaveRating(star)}  // クリックで評価を保存
+                  disabled={savingRating}
+                  className="text-3xl transition transform hover:scale-110 disabled:opacity-50"
+                >
+                  {/* 現在の rating より小さい番号の星は黄色（塗りつぶし）、大きい番号の星はグレー（塗りなし） */}
+                  {star <= rating ? '⭐' : '☆'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </article>
+
+        {/* ===== メモ機能セクション ===== */}
+        <section className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-2xl shadow-lg p-8 mb-8 border border-amber-200">
+          {/* セクションタイトル */}
+          <h2 className="text-2xl font-bold text-amber-900 mb-4 flex items-center gap-2">
+            <span className="text-3xl">📝</span> 学習メモ
+          </h2>
+          
+          {/* メモ入力フィールド */}
+          <textarea 
+            value={memo}  // 現在のメモ状態を表示
+            onChange={(e) => setMemo(e.target.value)}  // 入力するたび memo 状態を更新
+            className="w-full p-4 border-2 border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none text-gray-800 bg-white min-h-[200px] resize-none"
+            placeholder="この記事から学んだこと、後で読み返したいポイント、実装方法など自由にメモしましょう..."
+          />
+          
+          {/* メモ保存ボタン */}
+          <button 
+            onClick={handleSaveMemo}  // クリックで handleSaveMemo 関数を実行
+            disabled={saving}  // saving が true の時、ボタンを無効化
+            className={`mt-4 w-full py-3 rounded-lg text-white font-bold transition transform hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 ${
+              saving ? 'bg-gray-400' : 'bg-amber-600 hover:bg-amber-700'
+            }`}
+          >
+            {saving ? '💾 保存中...' : '💾 メモを保存する'}
+          </button>
+        </section>
+
+        {/* ===== 記事を開くボタン ===== */}
+        <div className="text-center">
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg transition transform hover:scale-105"
+          >
+            🔗 元の記事を開く
+          </a>
+        </div>
       </div>
     </main>
   )
