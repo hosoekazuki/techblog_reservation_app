@@ -35,8 +35,19 @@ export default function BookmarkItem({ item, onDelete }: BookmarkItemProps) {
         {/* 保存日時を表示 */}
         <div className="flex items-center gap-3 mt-3">
           <span className="text-gray-400 text-xs">
-            📅 {/* new Date でISO形式の日付をブラウザがわかる日本語表記に変換 */}
-            {new Date(item.created_at).toLocaleDateString()}
+            {/* 【改善】created_at を適切にフォーマットして表示 */}
+            {/* item.created_at がISO形式（例："2024-03-21T10:30:00"）で返ってくるため、 */}
+            {/* new Date() でJavaScriptの日付オブジェクトに変換してから表示形式を指定 */}
+            📅 {item.created_at 
+              ? new Date(item.created_at).toLocaleString('ja-JP', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })
+              : '日付不明'
+            }
           </span>
         </div>
       </div>
