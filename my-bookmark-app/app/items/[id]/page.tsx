@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import TagEditor from '@/components/TagEditor'
+import DescriptionEditor from '@/components/DescriptionEditor'
 
 export default function DetailPage() {
   // ===== URL パラメータ取得 =====
@@ -32,9 +33,15 @@ export default function DetailPage() {
   // メモの内容を管理する状態
   // ユーザーがテキストエリアに入力したメモ内容をリアルタイムで保持
   const [memo, setMemo] = useState('')
+
+  // 説明文を編集するための状態
+  const [description, setDescription] = useState('')
   
   // メモ保存中かどうかのフラグ（ボタンの無効化に使用）
   const [saving, setSaving] = useState(false)
+
+  // 説明文保存中かどうかのフラグ
+  const [savingDescription, setSavingDescription] = useState(false)
   
   // 【新規追加】評価（星）を管理する状態（1～5）
   // ユーザーが選択した星の数を保持
@@ -68,6 +75,7 @@ export default function DetailPage() {
       if (data) {
         setItem(data)  // 取得したデータを状態に保存（画面に表示される）
         setMemo(data.memo || '') // DBに保存されているメモがあればセットする
+        setDescription(data.description || '') // DBに保存されている説明文をセットする
         setRating(data.rating || 0) // DBに保存されている評価があればセットする
         setTag(data.tag || 'その他') // 【新規追加】DBに保存されているタグがあればセットする
       }
@@ -111,6 +119,27 @@ export default function DetailPage() {
     
     // UI 更新: 保存中フラグ OFF（ボタンを有効化）
     setSaving(false)
+  }
+
+  // ===== 説明文保存処理 =====
+  // ユーザーが編集した説明文を Supabase に保存する
+  const handleSaveDescription = async () => {
+    setSavingDescription(true)
+
+    const { error } = await supabase
+      .from('techblog_bookmark')
+      .update({ description: description })
+      .eq('id', id)
+
+    if (error) {
+      alert('説明文の保存に失敗しました')
+    } else {
+      // 一覧や画面の表示と状態がずれないように item も更新
+      setItem({ ...item, description })
+      alert('説明文を保存しました！')
+    }
+
+    setSavingDescription(false)
   }
 
   // ===== 【新規追加】評価保存処理 =====
@@ -179,10 +208,12 @@ export default function DetailPage() {
             {item.title}
           </h1>
           
-          {/* 記事の説明文 */}
-          <p className="text-lg text-gray-600 leading-relaxed mb-6 border-l-4 border-indigo-400 pl-4">
-            {item.description}
-          </p>
+          <DescriptionEditor
+            description={description}
+            onDescriptionChange={setDescription}
+            onSave={handleSaveDescription}
+            saving={savingDescription}
+          />
           
           {/* ===== 【新規追加】評価セクション ===== */}
           <div className="flex items-center gap-4 pt-6 border-t border-gray-200">

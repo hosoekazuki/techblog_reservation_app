@@ -5,6 +5,8 @@
 // ユーザーがブログのURLを入力し、「保存」ボタンをクリックするためのフォーム部分
 // このコンポーネントは UI 部分に特化しており、実際の保存処理は親コンポーネント（page.tsx）で行われる
 
+import type { FormEvent } from 'react'
+
 // 【Props とは】
 // React で親コンポーネントからデータを受け取るための仕組み
 // 以下の情報を親（page.tsx）から受け取ります
@@ -22,6 +24,12 @@ interface BookmarkFormProps {
 // BookmarkFormコンポーネント: URL入力フォームを描画する関数
 // Props から url, setUrl, onSave, loading, tag, setTag, availableTags を取り出す（分割代入）
 export default function BookmarkForm({ url, setUrl, onSave, loading, tag, setTag, availableTags }: BookmarkFormProps) {
+  // Enterキーで保存できるよう、フォーム送信を利用する
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    onSave();
+  };
+
   return (
     // フォーム全体のコンテナ: 白い背景で目立つように見せる
     <div className="bg-white rounded-xl shadow-md p-8 mb-8">
@@ -30,8 +38,8 @@ export default function BookmarkForm({ url, setUrl, onSave, loading, tag, setTag
         技術ブログ保存くん <span className="text-sm font-normal text-gray-400">v1.1</span>
       </h1>
       
-      {/* URL入力エリア: input と button を並べる */}
-      <div className="flex gap-2 mb-4">
+      {/* URL入力エリア: Enterキー押下で保存できるよう form にする */}
+      <form className="flex gap-2 mb-4" onSubmit={handleSubmit}>
         {/* 入力フィールド: ユーザーがURL を入力する場所 */}
         <input 
           type="text"  // テキスト入力用
@@ -43,14 +51,14 @@ export default function BookmarkForm({ url, setUrl, onSave, loading, tag, setTag
         />
         {/* 保存ボタン */}
         <button 
-          onClick={onSave}  // クリックで親の handleSave 関数を実行
+          type="submit"
           disabled={loading}  // loading が true の時、ボタンを無効化して複数回押下を防ぐ
           className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400 transition"
         >
           {/* loading の状態で表示内容を切り替え */}
           {loading ? '中...' : '保存'}  {/* 保存中なら「中...」、そうでなければ「保存」と表示 */}
         </button>
-      </div>
+      </form>
 
       {/* 【新規追加】タグ入力フィールド */}
       <div className="flex gap-2 items-center">
